@@ -46,33 +46,56 @@ class RedisCache extends CCache {
     }
 
     protected function getValue($key) {
-        $this->_conn->getRedis()->get($key);
+        return $this->_conn->getRedis()->get($key);
     }
 
     /**
+     * Set the value of the key. If the key already exists, then update the value
+     * and the expire time of it.
      * @param string $key
      * @param mixed $value
      * @param float $expire
+     * @return boolean
      */
     protected function setValue($key, $value, $expire) {
-        $this->_conn->getRedis()->set($key, $value, $expire);
+        $ret = $this->_conn->getRedis()->set($key, $value);
+
+        if ($ret && $expire) {
+            $this->_conn->getRedis()->expire($key, $expire);
+        }
+
+        return $ret;
+    }
+
+    /**
+     * Add value to redis if the key does not exist, otherwise do nothing
+     * @param string $key
+     * @param mixed $value
+     * @param float $expire
+     * @return boolean 
+     */
+    protected function addValue($key, $value, $expire) {
+        $ret = $this->_conn->getRedis()->setnx($key, $value);
+
+        if ($ret && $expire) {
+            $this->_conn->getRedis()->expire($key, $expire);
+        }
+
+        return $ret;
     }
 
     /**
      * @param string $key
-     * @param mixed $value
-     * @param float $expire
+     * @return boolean if no error happens during deletion
      */
-    protected function addValue($key, $value, $expire) {
-        $this->setValue($key, $value, $expire);
-    }
-
     protected function deleteValue($key) {
-        $this->_conn->getRedis()->del($key);
+        $this->_conn->getRedis()->delete($key);
+        return true;
     }
 
     protected function flushValues() {
         $this->_conn->getRedis()->flushAll();
+        return true;
     }
 
     /**
@@ -81,5 +104,6 @@ class RedisCache extends CCache {
     public function getConnection() {
         return $this->_conn;
     }
+
 }
 
