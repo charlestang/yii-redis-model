@@ -23,6 +23,11 @@ abstract class RedisHashModel extends CModel {
     private $_id = null;
 
     /**
+     * @var RedisConnection 
+     */
+    public static $redis = null;
+
+    /**
      * The key prefix of the redis hash.
      * 
      * This key prefix should be colon ended, like "users:"
@@ -137,51 +142,60 @@ abstract class RedisHashModel extends CModel {
         $this->_new = $value;
     }
 
-    public function getId() {
+    public function getIsNewRecord() {
+        return $this->_new;
+    }
+
+    public function getModelId() {
         return $this->_id;
     }
 
-}
+    /**
+     * @param string $id
+     */
+    public function findByModelId($id, $class = __CLASS__) {
+        $redisHash = $this->getRedisConnection()->getRedis()->hGetAll($this->getKeyNamePrefix() . $id);
+        if (!empty($redisHash)) {
+            $model = new $class('update');
+            $model->attributes = $redisHash;
 
-/**
- * This is the metadata of the redis hash model.
- */
-class RedisHashMetaData {
+            return $model;
+        }
+        return null;
+    }
+
+    public function save($runValidation = true, $attributes = null) {
+        if (!$runValidation || $this->validate($attributes)) {
+            if ($this->getIsNewRecord()) {
+                $this->_id = uniqid();
+            }
+
+            $attributes_to_save = $this->attributes;
+            if ($attributes != null) {
+                foreach ($attributes as $key) {
+                    if (isset($attributes_to_save[$key])) {
+                        unsset($attributes_to_save[$key]);
+                    }
+                }
+            }
+
+            return $this->getRedisConnection()->getRedis()->hMset($this->getKeyNamePrefix() . $this->_id, $attributes_to_save);
+        }
+    }
 
     /**
-     * @var string the virtual table name of the object storage, which is a redis hash 
+     * @return RedisConnection
+     * @throws CDbException
      */
-    public $keyNamePrefix;
-
-    /**
-     * @var array the properties' names of the object
-     */
-    public $properties;
-
-    /**
-     * @var array the default values of each property 
-     */
-    public $attributeDetaults = array();
-
-    /**
-     * @var RedisHashModel 
-     */
-    private $_model;
-
-    /**
-     * Constructor
-     * @param RedisHashModel $model
-     */
-    public function __construct($model) {
-        $this->_model = $model;
-        $this->keyNamePrefix = $model->getKeyNamePrefix();
-        $this->properties = $model->attributeNames();
-        $this->attributeDetaults = $model->defaultValues();
-
-        //make all the property has the key in defauls array
-        foreach ($this->properties as $property) {
-            if (!isset($this->attributeDetaults[$property])) {
-                $this->attributeDetaults[$property] = null;
+    public function getRedisConnection() {
+        if (self::$redis != null) {
+            return self::$redis;
+        } else {
+            self::$redis = Yii::app()->getComponent('redis');
+            if (self::$redis != null && self::$redis instanceof RedisConnection) {
+                return self::$redis;
+            } else {
+                throw new CDbException("Redis connection canot find.");
             }
         }
     }
